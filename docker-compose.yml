@@ -1,0 +1,189 @@
+# Defense 1 stack: PostgreSQL, FastAPI model service, Streamlit webapp,
+# and Apache Airflow 3.x (LocalExecutor: api-server + scheduler +
+# dag-processor + triggerer + a one-shot init job).
+#
+# Run with:  docker compose up --build
+#
+# NOTE: "docker compose" (space), not the deprecated "docker-compose".
+
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: Dockerfile.airflow
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${AIRFLOW_DB:-airflow_db}
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-please_change_this_jwt_secret}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    # Airflow Connection for our APPLICATION database (used by PostgresHook
+    # in the ingestion DAG). Env-var-defined connections follow the
+    # AIRFLOW_CONN_<CONN_ID> convention (conn_id="dsp_postgres").
+    AIRFLOW_CONN_DSP_POSTGRES: postgres://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${POSTGRES_DB:-dsp_db}
+    GE_PROJECT_DIR: /opt/airflow/great_expectations
+    MODEL_API_URL: http://api:8000
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./scripts:/opt/airflow/scripts
+    - ./data:/opt/airflow/data
+    - ./great_expectations:/opt/airflow/great_expectations
+    - airflow-logs:/opt/airflow/logs
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16
+    container_name: dsp_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dsp_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsp_password}
+      POSTGRES_DB: ${POSTGRES_DB:-dsp_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres_init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsp_user} -d ${POSTGRES_DB:-dsp_db}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build: ./model_service
+    container_name: dsp_api
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${POSTGRES_DB:-dsp_db}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  webapp:
+    build: ./webapp
+    container_name: dsp_webapp
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: dsp_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@example.com || true
+        if [ -n "${TEAMS_WEBHOOK_DATA_QUALITY:-}" ]; then
+          airflow variables set TEAMS_WEBHOOK_DATA_QUALITY "${TEAMS_WEBHOOK_DATA_QUALITY}"
+        fi
+        if [ -n "${TEAMS_WEBHOOK_ML_ALERTS:-}" ]; then
+          airflow variables set TEAMS_WEBHOOK_ML_ALERTS "${TEAMS_WEBHOOK_ML_ALERTS}"
+        fi
+    restart: on-failure
+
+  airflow-apiserver:
+    <<: *airflow-common
+    container_name: dsp_airflow_apiserver
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: dsp_airflow_scheduler
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    container_name: dsp_airflow_dag_processor
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  airflow-triggerer:
+    <<: *airflow-common
+    container_name: dsp_airflow_triggerer
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  airflow-logs:

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+
+jobs:
+  model-service:
+    name: model_service (lint + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: model_service
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8 pytest
+
+      - name: Lint with flake8
+        working-directory: model_service
+        run: flake8 app/ tests/ --max-line-length=100
+
+      - name: Run tests with pytest
+        working-directory: model_service
+        env:
+          DATABASE_URL: "sqlite:///./test_dsp.db"
+        run: pytest tests/ -v
+
+  scripts-and-dags:
+    name: scripts & dags (lint + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy great-expectations flake8 pytest
+
+      - name: Lint with flake8
+        run: flake8 scripts/ dags/ --max-line-length=100
+
+      - name: Run tests with pytest
+        run: pytest scripts/tests/ dags/tests/ -v
+
+  webapp:
+    name: webapp (lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: webapp
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install flake8
+
+      - name: Lint with flake8
+        working-directory: webapp
+        run: flake8 . --max-line-length=110

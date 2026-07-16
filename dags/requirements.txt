@@ -1,0 +1,14 @@
+# Installed on top of the official apache/airflow image, using Airflow's
+# own constraints file (see Dockerfile.airflow) to avoid clobbering a
+# version Airflow itself depends on.
+#
+# great-expectations is the one package Airflow doesn't already depend on,
+# so it's the only one we hard-pin. pandas/requests/the postgres provider
+# are left unpinned here on purpose - the constraints file resolves them
+# to whatever version Airflow 3.0.2 was actually tested against, which
+# avoids a real risk: our own pin silently overriding Airflow's and
+# breaking the image at import time.
+great-expectations==1.18.2
+pandas
+requests
+apache-airflow-providers-postgres

@@ -1,0 +1,36 @@
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+*.db
+
+# Airflow
+logs/
+airflow.cfg
+airflow-webserver.pid
+great_expectations/gx/
+
+# Data (generated at runtime, not part of the repo)
+data/raw_data/*
+data/good_data/*
+data/bad_data/*
+data/archived_data/*
+!data/raw_data/.gitkeep
+!data/good_data/.gitkeep
+!data/bad_data/.gitkeep
+!data/archived_data/.gitkeep
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Node (if using any web tooling)
+node_modules/

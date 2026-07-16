@@ -1,0 +1,19 @@
+# Extends the official Airflow 3.x image with the extra Python packages
+# needed by our DAGs (Great Expectations, pandas, requests, the Postgres
+# provider). Build context is the project root so we can copy
+# dags/requirements.txt in.
+FROM apache/airflow:3.0.2-python3.12
+
+COPY dags/requirements.txt /requirements.txt
+
+# Install against Airflow's own published constraints file so pip doesn't
+# silently upgrade/downgrade a shared dependency (pandas, SQLAlchemy,
+# pydantic, ...) into something incompatible with this Airflow version.
+# great-expectations itself isn't in the constraints file, so it installs
+# at the version we ask for; only the OVERLAPPING packages get pinned.
+#
+# NOTE: no --user flag here - this Airflow image already installs into
+# its own virtualenv (VIRTUAL_ENV is set), so --user is invalid and pip
+# will refuse with "User site-packages are not visible in this virtualenv."
+RUN pip install --no-cache-dir -r /requirements.txt \
+    --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.0.2/constraints-3.12.txt"

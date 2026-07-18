@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import streamlit as st
+
 from api_client import APIError, get_past_predictions
 
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -103,11 +104,11 @@ else:
         churn_rate = churn_yes / shown_count * 100 if shown_count else 0
 
         m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Total in DB", total_count)
-        m2.metric("Showing", shown_count)
+        m1.metric("Total in DB",   total_count)
+        m2.metric("Showing",       shown_count)
         m3.metric("🔴 Churn = Yes", churn_yes)
-        m4.metric("🟢 Churn = No", churn_no)
-        m5.metric("Churn Rate", f"{churn_rate:.1f}%")
+        m4.metric("🟢 Churn = No",  churn_no)
+        m5.metric("Churn Rate",    f"{churn_rate:.1f}%")
 
         st.divider()
 

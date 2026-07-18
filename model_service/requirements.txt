@@ -8,3 +8,4 @@ scikit-learn==1.8.0
 pandas>=2.0,<3
 numpy>=1.26,<3
 python-multipart==0.0.32
+httpx>=0.24.0

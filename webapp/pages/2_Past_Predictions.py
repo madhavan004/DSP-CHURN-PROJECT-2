@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import streamlit as st
 
-warnings.filterwarnings("ignore", category=FutureWarning)
-
 from api_client import APIError, get_past_predictions
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 st.set_page_config(page_title="Past Predictions", page_icon="📊", layout="wide")
 st.title("📊 Past Predictions")
@@ -100,7 +100,7 @@ else:
 
         # Summary metrics
         churn_yes = int((df["Prediction"] == "Yes").sum())
-        churn_no  = int((df["Prediction"] == "No").sum())
+        churn_no = int((df["Prediction"] == "No").sum())
         churn_rate = churn_yes / shown_count * 100 if shown_count else 0
 
         m1, m2, m3, m4, m5 = st.columns(5)

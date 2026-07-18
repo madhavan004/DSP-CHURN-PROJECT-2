@@ -2,6 +2,7 @@ import warnings
 
 import pandas as pd
 import streamlit as st
+
 from api_client import APIError, predict
 from schema_constants import CATEGORICAL_OPTIONS, REQUIRED_COLUMNS
 

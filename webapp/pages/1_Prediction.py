@@ -2,11 +2,10 @@ import warnings
 
 import pandas as pd
 import streamlit as st
-
-warnings.filterwarnings("ignore", category=FutureWarning)
-
 from api_client import APIError, predict
 from schema_constants import CATEGORICAL_OPTIONS, REQUIRED_COLUMNS
+
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 st.set_page_config(page_title="Prediction", page_icon="🔮", layout="wide")
 st.title("🔮 Make a Prediction")

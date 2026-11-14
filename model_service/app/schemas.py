@@ -1,53 +1,42 @@
+"""
+Pydantic Schemas for Request and Response Validation
+"""
 from datetime import datetime
-from enum import Enum
-from typing import List, Literal, Optional
-
-from pydantic import BaseModel, ConfigDict, Field
+from typing import Any, Dict, List, Literal, Optional
+from pydantic import BaseModel, Field, field_validator
 
 
 class CustomerFeatures(BaseModel):
-    """
-    One row of input features for the churn model.
-    Mirrors the Telco Customer Churn dataset schema (see scripts/schema.py).
-    """
+    customerID: Optional[str] = Field(default="7590-VHVEG", description="Unique Customer Identifier")
+    gender: str = Field(default="Female", description="Gender (Female / Male)")
+    SeniorCitizen: int = Field(default=0, ge=0, le=1, description="Senior Citizen (0 or 1)")
+    Partner: str = Field(default="Yes", description="Partner (Yes / No)")
+    Dependents: str = Field(default="No", description="Dependents (Yes / No)")
+    tenure: float = Field(default=1.0, ge=0.0, description="Months with telecom provider")
+    PhoneService: str = Field(default="No", description="Phone Service (Yes / No)")
+    MultipleLines: str = Field(default="No phone service", description="Multiple Lines")
+    InternetService: str = Field(default="DSL", description="Internet Service (DSL, Fiber optic, No)")
+    OnlineSecurity: str = Field(default="No", description="Online Security")
+    OnlineBackup: str = Field(default="Yes", description="Online Backup")
+    DeviceProtection: str = Field(default="No", description="Device Protection")
+    TechSupport: str = Field(default="No", description="Tech Support")
+    StreamingTV: str = Field(default="No", description="Streaming TV")
+    StreamingMovies: str = Field(default="No", description="Streaming Movies")
+    Contract: str = Field(default="Month-to-month", description="Contract term")
+    PaperlessBilling: str = Field(default="Yes", description="Paperless Billing (Yes / No)")
+    PaymentMethod: str = Field(default="Electronic check", description="Payment Method")
+    MonthlyCharges: float = Field(default=29.85, ge=0.0, description="Monthly Charges ($)")
+    TotalCharges: float = Field(default=29.85, ge=0.0, description="Total Charges ($)")
 
-    customerID: Optional[str] = Field(
-        default=None, description="Optional customer identifier, for display only"
-    )
-    gender: Literal["Female", "Male"]
-    SeniorCitizen: Literal[0, 1]
-    Partner: Literal["Yes", "No"]
-    Dependents: Literal["Yes", "No"]
-    tenure: int = Field(ge=0, le=100, description="Months as a customer")
-    PhoneService: Literal["Yes", "No"]
-    MultipleLines: Literal["Yes", "No", "No phone service"]
-    InternetService: Literal["DSL", "Fiber optic", "No"]
-    OnlineSecurity: Literal["Yes", "No", "No internet service"]
-    OnlineBackup: Literal["Yes", "No", "No internet service"]
-    DeviceProtection: Literal["Yes", "No", "No internet service"]
-    TechSupport: Literal["Yes", "No", "No internet service"]
-    StreamingTV: Literal["Yes", "No", "No internet service"]
-    StreamingMovies: Literal["Yes", "No", "No internet service"]
-    Contract: Literal["Month-to-month", "One year", "Two year"]
-    PaperlessBilling: Literal["Yes", "No"]
-    PaymentMethod: Literal[
-        "Electronic check",
-        "Mailed check",
-        "Bank transfer (automatic)",
-        "Credit card (automatic)",
-    ]
-    MonthlyCharges: float = Field(ge=0, le=1000)
-    TotalCharges: float = Field(ge=0, le=100000)
-
-    model_config = ConfigDict(
-        json_schema_extra={
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "customerID": "7590-VHVEG",
                 "gender": "Female",
                 "SeniorCitizen": 0,
                 "Partner": "Yes",
                 "Dependents": "No",
-                "tenure": 1,
+                "tenure": 1.0,
                 "PhoneService": "No",
                 "MultipleLines": "No phone service",
                 "InternetService": "DSL",
@@ -64,41 +53,61 @@ class CustomerFeatures(BaseModel):
                 "TotalCharges": 29.85,
             }
         }
-    )
+    }
 
 
-class PredictionSource(str, Enum):
-    webapp = "webapp"
-    scheduled = "scheduled"
+class PredictRequest(BaseModel):
+    features: List[CustomerFeatures] = Field(..., min_length=1, description="List of feature records to score")
+    source: Literal["webapp", "scheduled"] = Field(default="webapp", description="Origin source of prediction request")
 
 
-class PredictionRequest(BaseModel):
-    features: List[CustomerFeatures] = Field(min_length=1)
-    source: PredictionSource = PredictionSource.webapp
+class SinglePredictionResult(BaseModel):
+    customer_id: Optional[str]
+    prediction: str = Field(description="'Yes' (churn) or 'No' (retention)")
+    churn_probability: float = Field(description="Probability between 0.0 and 1.0")
+    risk_level: str = Field(description="Low (< 0.35), Medium (0.35 - 0.65), High (> 0.65)")
+    model_version: str
+    features: Dict[str, Any]
 
 
-class PredictionItem(BaseModel):
+class BatchPredictResponse(BaseModel):
+    total: int
+    model_version: str
+    predictions: List[SinglePredictionResult]
+
+
+class PastPredictionItem(BaseModel):
     id: int
-    customer_id: Optional[str] = None
-    features: dict
-    prediction: Literal["Yes", "No"]
+    customer_id: Optional[str]
+    source: str
+    prediction: str
     churn_probability: float
     model_version: str
-    source: str
+    tenure: Optional[float]
+    monthly_charges: Optional[float]
+    total_charges: Optional[float]
+    contract: Optional[str]
+    internet_service: Optional[str]
+    features_payload: Dict[str, Any]
     created_at: datetime
 
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PredictionResponse(BaseModel):
-    predictions: List[PredictionItem]
-    count: int
+    model_config = {"from_attributes": True}
 
 
 class PastPredictionsResponse(BaseModel):
-    predictions: List[PredictionItem]
-    count: int
+    total: int
+    items: List[PastPredictionItem]
 
 
 class HealthResponse(BaseModel):
     status: str
+    model_version: str
+    model_source: str
+    timestamp: datetime
+
+
+class ReloadModelResponse(BaseModel):
+    status: str
+    message: str
+    model_version: str
+    model_source: str

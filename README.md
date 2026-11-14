@@ -1,184 +1,249 @@
-# Telco Customer Churn — MLOps Pipeline (Defense 1)
+# 📡 Telecom Customer Churn MLOps Production Platform
 
-End-to-end MLOps pipeline for predicting customer churn on the
-[Telco Customer Churn dataset](data/telco_full.csv), built for the Data
-Science in Production course — **Defense 1** deliverables.
+[![CI Pipeline](https://github.com/your-org/telecom-churn/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/telecom-churn/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/release/python-3120/)
+[![Airflow 3.x](https://img.shields.io/badge/Airflow-3.x-teal.svg)](https://airflow.apache.org/)
+[![Great Expectations v1.x](https://img.shields.io/badge/Great%20Expectations-v1.x-orange.svg)](https://greatexpectations.io/)
+[![Docker Compose](https://img.shields.io/badge/Docker%20Compose-Ready-blue)](https://docs.docker.com/compose/)
 
-## What's included (Defense 1 scope)
+An end-to-end, production-grade Machine Learning Operations (MLOps) platform for **Telecom Customer Churn** prediction and monitoring, built for the Data Science in Production (DSP) course.
 
-- **Data prep scripts**: split a clean dataset into 10-row ingestion files, and inject 7 configurable types of data-quality errors
-- **FastAPI model service**: serves churn predictions (model loaded from a local file), backed by PostgreSQL via SQLAlchemy
-- **Streamlit webapp**: single & batch predictions, past-predictions browser — talks to the API only (never touches the model or DB directly)
-- **Airflow 3.x DAGs**:
-  - `ingestion_dag` (every minute): validates incoming files with Great Expectations, saves stats, sends Teams alerts, splits good/bad data
-  - `prediction_dag` (every 2 minutes): batch-predicts newly ingested good data
-- **Great Expectations v1.x**: expectation suite covering all 7 error categories, with persisted Data Docs HTML reports
-- **Docker Compose**: every service containerized with health checks
-- **CI**: GitHub Actions running flake8 + pytest (separate steps) on PRs to `develop`
+---
 
-Defense 2 items (MLflow, `/reload-model`, nginx, Grafana dashboards, CD pipeline) are **not** part of this delivery.
-
-## Project structure
+## 🏗️ System Architecture
 
 ```
-project/
-├── dags/                     # Airflow DAGs
-│   ├── ingestion_dag.py
-│   ├── prediction_dag.py
-│   ├── utils/                # ge_suite.py, split_logic.py, teams_alerts.py
-│   └── tests/                # pytest unit tests (criticality, stats, split logic)
+                               ┌──────────────────────────────────────────────┐
+                               │               Streamlit WebApp               │
+                               │  (Prediction Page & Past Predictions Page)   │
+                               └───────────────────────┬──────────────────────┘
+                                                       │ HTTP / JSON
+                                                       ▼
+                               ┌──────────────────────────────────────────────┐
+                               │            FastAPI Model Service             │
+                               │  (/health, /predict, /past-predictions, ...) │
+                               └───────┬──────────────────────────────┬───────┘
+                                       │ SQLAlchemy                   │ MLflow Client
+                                       ▼                              ▼
+                               ┌───────────────┐              ┌───────────────┐
+                               │  PostgreSQL   │              │ MLflow Server │
+                               │   Database    │              │ Model Registry│
+                               └───────▲───────┘              └───────▲───────┘
+                                       │ PostgresHook                 │ Tracking
+                                       │                              │
+┌──────────────────────────────────────┴──────────────────────────────┴──────────────────────────────────────┐
+│                                            Airflow 3.x Scheduler                                           │
+│                                                                                                            │
+│   ┌──────────────────────────────┐ ┌──────────────────────────────┐ ┌───────────────────────────────────┐  │
+│   │        Ingestion DAG         │ │        Prediction DAG        │ │           Training DAG            │  │
+│   │  (GX Validation, Alerts,     │ │  (Checks good_data, calls    │ │  (Retrains, MLflow Evaluation,    │  │
+│   │   Split good & bad data)     │ │   FastAPI batch predict)     │ │   Promotes @champion, Reloads API)│  │
+│   └──────────────┬───────────────┘ └──────────────┬───────────────┘ └─────────────────┬─────────────────┘  │
+└──────────────────┼────────────────────────────────┼───────────────────────────────────┼────────────────────┘
+                   ▼                                ▼                                   ▼
+           ┌───────────────┐                ┌───────────────┐                   ┌───────────────┐
+           │ Data Folders  │                │ Nginx Server  │                   │    Grafana    │
+           │ raw / good /  │                │ (GX Data Docs │                   │ (Data Quality │
+           │ bad / archive │                │  HTML Reports)│                   │ & Drift Dash) │
+           └───────────────┘                └───────────────┘                   └───────────────┘
+```
+
+---
+
+## 🧩 Components Overview
+
+| Component | Technology | Port | Description |
+|-----------|------------|------|-------------|
+| **Web UI** | Streamlit | `8501` | Multi-page interactive UI for single customer scoring, batch CSV uploads, and past prediction history. |
+| **Model API** | FastAPI + Pydantic | `8000` | REST API for inference, persistence, and dynamic model reloading. |
+| **Database** | PostgreSQL 15 | `5432` | Stores prediction logs, ingestion data quality statistics, and training drift baselines. |
+| **Data Quality** | Great Expectations v1.x | N/A | Validation engine detecting 9+ data quality error types, computing criticality, and generating HTML Data Docs. |
+| **Orchestration** | Apache Airflow 3.x | `8085` | Schedules continuous ingestion, batch scoring, and automated retraining workflows. |
+| **Model Lifecycle**| MLflow Registry | `5000` | Experiment tracking and registry with `@champion` alias promotion. |
+| **Report Serving**| Nginx | `8080` | Serves Great Expectations Data Docs HTML reports with clickable links. |
+| **Monitoring** | Grafana | `3000` | Real-time operational dashboards for Data Quality and Model / Feature Drift. |
+
+---
+
+## 🚀 Quickstart & Setup Guide
+
+### 1. Prerequisites
+- Docker Engine & Docker Compose (`docker compose version` >= 2.20)
+- Git
+- Python 3.12+ (for local scripts/tests)
+
+### 2. Clone and Configure Environment
+```bash
+git clone <your-repo-url>
+cd "telecom churn"
+
+# Copy environment template
+cp .env.example .env
+```
+
+### 3. Launch All Containers with Docker Compose
+```bash
+docker compose up -d --build
+```
+
+### 4. Verify Services
+Check running containers:
+```bash
+docker compose ps
+```
+
+Access Web Interfaces:
+- **Streamlit WebApp**: [http://localhost:8501](http://localhost:8501)
+- **FastAPI Docs (Swagger UI)**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Airflow Webserver**: [http://localhost:8085](http://localhost:8085) *(User: `admin`, Pass: `admin`)*
+- **Grafana Monitoring**: [http://localhost:3000](http://localhost:3000) *(User: `admin`, Pass: `admin`)*
+- **MLflow Tracking**: [http://localhost:5000](http://localhost:5000)
+- **Data Docs Reports (Nginx)**: [http://localhost:8080](http://localhost:8080)
+
+---
+
+## 🧪 Testing & CI/CD Pipeline
+
+### Local Unit Tests
+Run the complete test suite with `pytest`:
+```bash
+pytest -v tests/
+```
+
+### Linting
+```bash
+flake8 .
+```
+
+### GitHub Actions CI/CD
+- **CI (`.github/workflows/ci.yml`)**: Triggered on Pull Requests to `develop`. Executes separate steps for `flake8` linting and `pytest` unit tests.
+- **CD (`.github/workflows/cd.yml`)**: Triggered on merge to `main`. Automatically drafts semantic version tags (e.g. `v1.0.0`) and creates GitHub Releases.
+
+---
+
+## 📊 Defense Demo Instructions & Checklist
+
+### Preparation Checklist
+1. **Repository**: Merge feature branch to `develop`, then create a Pull Request to `main`.
+2. **Demo Files**: Ensure the 5 demo files exist in `data/demo_files/`:
+   - `demo_1_all_errors.csv` (100% invalid rows $\rightarrow$ High Criticality Alert $\rightarrow$ all rows to `bad_data`)
+   - `demo_2_clean_batch1.csv` (Clean batch $\rightarrow$ routed to `good_data`)
+   - `demo_3_clean_batch2.csv` (Clean batch $\rightarrow$ routed to `good_data`)
+   - `demo_4_clean_batch3.csv` (Clean batch $\rightarrow$ routed to `good_data`)
+   - `demo_5_mixed_data.csv` (Mixed batch $\rightarrow$ Medium Criticality $\rightarrow$ splits into `good_data` and `bad_data`)
+3. **Pre-populate Dashboards**:
+   ```bash
+   python scripts/populate_dashboard_data.py
+   ```
+4. **Clean Active Folders**:
+   Make sure `data/good_data/` and `data/bad_data/` are clean before starting live demo.
+
+### Step-by-Step Live Demo Flow (10 Minutes)
+1. **Streamlit Prediction Demo**:
+   - Open [http://localhost:8501](http://localhost:8501).
+   - Show Single Customer Prediction form with risk gauge.
+   - Upload CSV batch from `data/demo_files/demo_2_clean_batch1.csv` and show batch scoring results and CSV export.
+   - Navigate to **Past Predictions Page** and demonstrate date range filtering and source selection (`webapp` vs `scheduled`).
+2. **Data Ingestion & Error Handling Demo**:
+   - Copy `data/demo_files/demo_1_all_errors.csv` to `data/raw_data/`.
+   - Open Airflow at [http://localhost:8085](http://localhost:8085) and trigger / view `data_ingestion_pipeline`.
+   - Show that validation flags high criticality and routes rows to `data/bad_data/`.
+   - Open the auto-generated Great Expectations Data Docs link served on Nginx ([http://localhost:8080](http://localhost:8080)).
+3. **Data Splitting Demo**:
+   - Copy `data/demo_files/demo_5_mixed_data.csv` to `data/raw_data/`.
+   - Watch ingestion DAG split valid rows into `good_data/` and corrupted rows into `bad_data/`.
+4. **Scheduled Prediction Job Demo**:
+   - Trigger `scheduled_prediction_pipeline` in Airflow.
+   - Show batch API scoring in action, logging records to the database with `source='scheduled'`.
+5. **Grafana Dashboards Demo**:
+   - Open [http://localhost:3000](http://localhost:3000) $\rightarrow$ Dashboards $\rightarrow$ `Data Quality Monitoring` (show 4 temporal panels with thresholds).
+   - Open `Data Drift & Model Serving Monitor` (show numerical drift, categorical share, churn rate, and prediction probability trends).
+6. **Model Retraining & Promotion Demo (Defense 2)**:
+   - Trigger `model_training_and_promotion_pipeline` in Airflow.
+   - Show candidate model benchmark, MLflow `@champion` alias promotion, API `/reload-model` notification, and file archiving to `data/archived_data/`.
+
+---
+
+## 🛠️ Data Utility Scripts
+
+| Script | Command | Purpose |
+|--------|---------|---------|
+| **Split Dataset** | `python scripts/split_data.py --num_files 30` | Splits clean dataset into $N$ files with **exactly 10 rows** per file. |
+| **Inject Errors** | `python scripts/inject_errors.py --prob 0.1` | Corrupts data with 9 configurable error types across all categories. |
+| **Generate Demo Files**| `python scripts/generate_demo_files.py` | Generates the 5 required defense presentation files. |
+| **Train Initial Model**| `python scripts/train_initial_model.py` | Trains baseline model pipeline and extracts feature stats. |
+| **Populate Dashboards**| `python scripts/populate_dashboard_data.py` | Seeds historical data for Grafana dashboards. |
+
+---
+
+## 📁 Repository Directory Structure
+
+```
+telecom-churn/
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                 # Linting (flake8) + Tests (pytest) on PR to develop
+│       └── cd.yml                 # Automated release & tag creation on merge to main
+├── dags/                          # Apache Airflow 3.x DAGs
+│   ├── ingestion_dag.py           # Ingestion + Great Expectations + Alerts + Data Split
+│   ├── prediction_dag.py          # Batch Prediction + Skip handling
+│   └── training_dag.py            # Retraining + MLflow Registry Benchmark + Promotion
 ├── data/
-│   ├── telco_full.csv        # original clean dataset
-│   ├── raw_data/             # files waiting to be ingested
-│   ├── good_data/            # valid rows after validation
-│   ├── bad_data/             # invalid rows after validation
-│   └── archived_data/        # used by the training DAG (Defense 2)
-├── model_service/            # FastAPI app
+│   ├── raw_data/                  # Ingestion input files (10 rows each)
+│   ├── good_data/                 # Valid data for scoring and retraining
+│   ├── bad_data/                  # Corrupted rows filtered out by validation
+│   ├── archived_data/             # Processed data after retraining
+│   ├── demo_files/                # 5 required defense demonstration files
+│   └── telco_churn_clean.csv      # Clean base dataset
+├── great_expectations/            # Great Expectations v1.x Suite
+│   ├── great_expectations.yml
+│   ├── expectations/
+│   │   └── telco_churn_suite.json # Expectation rules JSON
+│   └── validator.py               # Validation, criticality & Data Docs engine
+├── model_service/                 # FastAPI Service
 │   ├── app/
-│   ├── tests/
-│   └── model_artifact/model.joblib
-├── webapp/                   # Streamlit app
-│   ├── Home.py
-│   └── pages/
-├── scripts/                  # schema.py, train_initial_model.py, split_data.py, inject_errors.py
-├── great_expectations/        # persisted GX project (Data Docs, mounted volume)
-├── postgres_init/            # creates the second (Airflow) database
-├── docker-compose.yml
-├── Dockerfile.airflow
-├── .env.example
-└── .github/workflows/ci.yml
+│   │   ├── main.py                # Endpoints: /health, /predict, /past-predictions, /reload-model
+│   │   ├── database.py            # SQLAlchemy connection pooling & session
+│   │   ├── models.py              # ORM: PredictionRecord, IngestionStatRecord, TrainingStatRecord
+│   │   ├── schemas.py             # Pydantic validation schemas
+│   │   └── ml_model.py            # ModelManager & MLflow integration
+│   ├── model/                     # Trained model artifacts & baseline stats
+│   ├── Dockerfile
+│   └── requirements.txt
+├── monitoring/                    # Grafana Provisioning
+│   └── provisioning/
+│       ├── datasources/postgres.yml
+│       ├── dashboards/
+│       │   ├── dashboards.yml
+│       │   ├── data_quality.json  # Data Quality Dashboard (4+ panels)
+│       │   └── data_drift.json    # Data Drift Dashboard (4+ panels)
+│       └── alerting/alerts.yml    # Teams alerting configuration
+├── nginx/                         # Nginx Server for GX Data Docs HTML
+│   ├── default.conf
+│   └── Dockerfile
+├── scripts/                       # Automation & Data Engineering Scripts
+│   ├── split_data.py
+│   ├── inject_errors.py
+│   ├── generate_demo_files.py
+│   ├── train_initial_model.py
+│   ├── populate_dashboard_data.py
+│   └── init_postgres.sql
+├── tests/                         # Pytest Unit Test Suite
+│   ├── test_criticality.py
+│   ├── test_data_splitting.py
+│   ├── test_error_injection.py
+│   ├── test_api_schemas.py
+│   └── test_api_endpoints.py
+├── webapp/                        # Streamlit Multi-Page App
+│   ├── Home.py                    # Landing & System Health
+│   ├── pages/
+│   │   ├── 1_🔮_Prediction.py     # Single Form & Batch CSV scoring
+│   │   └── 2_📜_Past_Predictions.py # Historical audit log & filters
+│   ├── Dockerfile
+│   └── requirements.txt
+├── docker-compose.yml             # Container Orchestration
+├── .env.example                   # Environment configuration template
+├── .flake8                        # Flake8 lint configuration
+├── .gitignore
+└── README.md
 ```
-
-## Prerequisites
-
-- Docker + Docker Compose v2 (`docker compose version`)
-- Python 3.12 (only needed if you want to run scripts locally, outside Docker)
-
-## Setup
-
-1. **Copy the env file and adjust if needed:**
-   ```bash
-   cp .env.example .env
-   ```
-   Defaults work out of the box for local use. Teams webhook URLs are optional — alerts are simply skipped (logged) if unset.
-
-2. **Build and start everything:**
-   ```bash
-   docker compose up --build
-   ```
-   First boot takes a few minutes (building the custom Airflow image with Great Expectations). Services come up in this order thanks to health checks: `db` → `airflow-init` → everything else.
-
-3. **Check everything is healthy:**
-   ```bash
-   docker compose ps
-   ```
-
-4. **Access the services:**
-   | Service | URL | Notes |
-   |---|---|---|
-   | Streamlit webapp | http://localhost:8501 | Prediction + Past Predictions pages |
-   | FastAPI docs (Swagger) | http://localhost:8000/docs | Try `/predict`, `/past-predictions` |
-   | Airflow UI | http://localhost:8080 | login: `admin` / `admin` (from `.env`) |
-   | PostgreSQL | `localhost:5432` (see below) | not exposed by default — see **Database access** |
-
-### Database access
-
-The `db` service doesn't publish a port to the host by default (only containers on the
-Docker network can reach it directly at `db:5432`), so there are two ways in:
-
-**Option A — psql inside the container (no setup needed):**
-```bash
-# App data (predictions, ingestion_stats)
-docker exec -it dsp_postgres psql -U dsp_user -d dsp_db
-
-# Airflow metadata
-docker exec -it dsp_postgres psql -U dsp_user -d airflow_db
-```
-Credentials come from `.env` (`POSTGRES_USER` / `POSTGRES_PASSWORD`, default `dsp_user` / `dsp_password`).
-
-Useful queries once connected to `dsp_db`:
-```sql
-\dt                                   -- list tables
-SELECT * FROM predictions ORDER BY created_at DESC LIMIT 10;
-SELECT * FROM ingestion_stats ORDER BY created_at DESC LIMIT 10;
-```
-
-**Option B — connect from a GUI client (DBeaver, TablePlus, pgAdmin, etc.):**
-Add a port mapping for `db` in `docker-compose.yml` (or an override file) so it's reachable from the host:
-```yaml
-  db:
-    ports:
-      - "5432:5432"
-```
-Then connect with:
-- Host: `localhost`, Port: `5432`
-- User / Password: from `.env` (`POSTGRES_USER` / `POSTGRES_PASSWORD`)
-- Database: `dsp_db` (app data) or `airflow_db` (Airflow metadata)
-
-| Table | Database | Contains |
-|---|---|---|
-| `predictions` | `dsp_db` | Every prediction made (webapp or scheduled), including the feature payload used |
-| `ingestion_stats` | `dsp_db` | Per-file data-quality summary stats from `ingestion_dag` (error counts, criticality) |
-| Airflow's own tables (`dag_run`, `task_instance`, ...) | `airflow_db` | Managed by Airflow itself — use the Airflow UI instead of querying these directly |
-
-## Generating demo data
-
-The model is already trained and committed (`model_service/model_artifact/model.joblib`). To (re)train it:
-```bash
-pip install -r model_service/requirements.txt
-python scripts/train_initial_model.py
-```
-
-To generate files for the ingestion job to pick up:
-```bash
-# 1. Split the clean dataset into N files of 10 rows each
-python scripts/split_data.py --input data/telco_full.csv --output-dir data/raw_data --num-files 30
-
-# 2. (Optional) corrupt some of them in place, to see validation catch errors
-python scripts/inject_errors.py --input-dir data/raw_data \
-    --completeness-null 0.1 --validity-out-of-range 0.1 --consistency-invalid-cat 0.1 \
-    --schema-missing-column 0.05 --type-wrong-dtype 0.1 \
-    --duplicate-primary-key 0.05 --cross-field-inconsistency 0.1
-```
-With both DAGs unpaused in the Airflow UI, `ingestion_dag` picks up one random file per minute, validates it, and routes rows to `good_data/` / `bad_data/`. `prediction_dag` then picks up new `good_data/` files every 2 minutes and calls the API for batch predictions — check the webapp's **Past Predictions** page (source = `scheduled`) to see them.
-
-### Demo file recipe (per the defense instructions)
-Prepare 5 files *outside* `raw_data/` ahead of time, then copy them in live during the defense:
-- 1 file, all rows corrupted (`inject_errors.py` with high probabilities) → demoes high-criticality alert + everything routed to `bad_data`
-- 3 clean files (straight from `split_data.py`) → demoes clean ingestion + scheduled predictions
-- 1 mixed file (moderate corruption probabilities) → demoes the good/bad split
-
-## Running tests & linting locally
-
-```bash
-# model_service
-cd model_service && pip install -r requirements.txt && pip install flake8 pytest
-flake8 app/ tests/ --max-line-length=100
-pytest tests/ -v
-
-# scripts + dags (from repo root)
-pip install pandas numpy great-expectations flake8 pytest
-flake8 scripts/ dags/ --max-line-length=100
-pytest scripts/tests/ dags/tests/ -v
-
-# webapp
-cd webapp && pip install -r requirements.txt && pip install flake8
-flake8 . --max-line-length=110
-```
-
-CI runs the same checks (lint and test as **separate** steps) on every PR into `develop` — see `.github/workflows/ci.yml`.
-
-## Key design notes
-
-- **Great Expectations**: a single suite (`dags/utils/ge_suite.py`) covers all 7 error categories via `meta={"category": ...}` tags on each expectation, which is how we aggregate per-category counts for `ingestion_stats` without needing 7 separate suites. Numeric columns are checked twice on purpose: a regex check on the raw string column catches wrong-dtype errors, and a range check on a `pd.to_numeric(errors="coerce")` shadow column catches out-of-range values — this avoids Great Expectations raising a metric-resolution error on genuinely mixed-type columns. Data Docs are written to a **file-based** GX context (`great_expectations/gx/...`, a mounted volume) so reports persist across DAG runs and containers.
-- **Missing-column (schema) detection** is done in plain pandas before the GX suite runs, since a truly absent column can't be safely referenced by a column-level expectation.
-- **Cross-field consistency** (e.g. `PhoneService=No` but `MultipleLines=Yes`) is checked with plain pandas rather than a custom GX Expectation class, to keep things simple for a course project.
-- **Prediction DAG "full skip"**: `check_for_new_data` raises `AirflowSkipException` itself (not just a downstream task) when there's nothing new, so the whole run shows as skipped rather than just `make_predictions`.
-- **Single Postgres instance**, two databases (`dsp_db`, `airflow_db`) — created via `postgres_init/01_create_airflow_db.sql`, owned by the same superuser so one set of credentials works for both.
-
-## Known limitations / not yet implemented (Defense 2)
-
-- `/reload-model` endpoint, MLflow model registry & training DAG
-- nginx (Data Docs are stored on disk with a path recorded in `ingestion_stats.report_file_name`, but there's no clickable link yet)
-- Grafana dashboards, alert routing
-- CD pipeline / GitHub Releases

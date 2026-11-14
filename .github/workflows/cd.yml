@@ -1,3 +1,4 @@
+
 name: CD Pipeline - Automated Release
 
 on:
@@ -8,9 +9,13 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+
 jobs:
   release:
-    name: Create Semantic GitHub Release
+    name: Create GitHub Release
     runs-on: ubuntu-latest
 
     steps:
@@ -19,31 +24,56 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Generate Semantic Version Tag
-        id: tag_version
-        uses: mathieudutour/github-tag-action@v6.2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          default_bump: minor
-          release_branches: main
+      - name: Generate next patch version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+
+          EXISTING_TAG=$(git tag --points-at "$GITHUB_SHA" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+
+          if [ -n "$EXISTING_TAG" ]; then
+            NEW_TAG="$EXISTING_TAG"
+            echo "Reusing existing tag: $NEW_TAG"
+          else
+            LATEST_TAG=$(git tag --list 'v[0-9]*' --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
+
+            if [ -z "$LATEST_TAG" ]; then
+              NEW_TAG="v0.1.0"
+            else
+              VERSION="${LATEST_TAG#v}"
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+              NEW_TAG="v${MAJOR}.${MINOR}.$((PATCH + 1))"
+            fi
+            echo "New release tag: $NEW_TAG"
+          fi
+
+          echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push version tag
+        run: |
+          git tag "${{ steps.version.outputs.new_tag }}" "$GITHUB_SHA"
+          git push origin "${{ steps.version.outputs.new_tag }}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.tag_version.outputs.new_tag }}
-          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          tag_name: ${{ steps.version.outputs.new_tag }}
+          name: Release ${{ steps.version.outputs.new_tag }}
+          target_commitish: ${{ github.sha }}
           body: |
-            ## Automated Production Delivery (${{ steps.tag_version.outputs.new_tag }})
-            
-            ${{ steps.tag_version.outputs.changelog }}
-            
+            ## Automated Production Delivery
+
+            Automated release from the main branch.
+
             ### Included Components:
             - FastAPI Model Service
             - Streamlit Multi-Page WebApp
             - Airflow 3.x Ingestion, Prediction, and Retraining DAGs
             - Great Expectations v1.x Quality Assurance
-            - Grafana Operational & Drift Dashboards
-            - PostgreSQL & MLflow Tracking
+            - Grafana Operational and Drift Dashboards
+            - PostgreSQL and MLflow Tracking
           draft: false
           prerelease: false
         env:

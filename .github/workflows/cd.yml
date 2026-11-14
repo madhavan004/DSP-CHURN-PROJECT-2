@@ -1,0 +1,50 @@
+name: CD Pipeline - Automated Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Semantic GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate Semantic Version Tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: minor
+          release_branches: main
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          body: |
+            ## Automated Production Delivery (${{ steps.tag_version.outputs.new_tag }})
+            
+            ${{ steps.tag_version.outputs.changelog }}
+            
+            ### Included Components:
+            - FastAPI Model Service
+            - Streamlit Multi-Page WebApp
+            - Airflow 3.x Ingestion, Prediction, and Retraining DAGs
+            - Great Expectations v1.x Quality Assurance
+            - Grafana Operational & Drift Dashboards
+            - PostgreSQL & MLflow Tracking
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

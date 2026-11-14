@@ -1,0 +1,29 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Teams-Data-Quality-Alerts
+    receivers:
+      - uid: teams-dq-alerts
+        type: teams
+        settings:
+          url: ${TEAMS_DATA_QUALITY_WEBHOOK_URL:-http://localhost:8000/mock-teams-webhook}
+  - orgId: 1
+    name: Teams-ML-Alerts
+    receivers:
+      - uid: teams-ml-alerts
+        type: teams
+        settings:
+          url: ${TEAMS_ML_ALERTS_WEBHOOK_URL:-http://localhost:8000/mock-teams-webhook}
+
+policies:
+  - orgId: 1
+    receiver: Teams-Data-Quality-Alerts
+    group_by: ['alertname', 'criticality']
+    routes:
+      - receiver: Teams-Data-Quality-Alerts
+        matchers:
+          - category = data_quality
+      - receiver: Teams-ML-Alerts
+        matchers:
+          - category = ml_drift

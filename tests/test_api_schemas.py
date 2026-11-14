@@ -47,4 +47,5 @@ def test_predict_request_empty_features_rejected():
 
 def test_predict_request_invalid_source_rejected():
     with pytest.raises(ValidationError):
-        PredictRequest(features=[CustomerFeatures()], source="invalid_source")  # only webapp or scheduled allowed
+        # only 'webapp' or 'scheduled' are valid source values
+        PredictRequest(features=[CustomerFeatures()], source="invalid_source")

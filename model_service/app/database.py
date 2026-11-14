@@ -11,7 +11,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
     try:
-        import psycopg2  # Check if postgres driver is installed
+        import psycopg2  # noqa: F401 — verify postgres driver installed
         DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/dsp_app"
     except ImportError:
         DATABASE_URL = "sqlite:///./dsp_app.db"

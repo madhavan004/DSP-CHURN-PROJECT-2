@@ -43,7 +43,9 @@ class ModelManager:
         self.model_version = "v1.0.0"
         self.model_source = "local_artifact"
         self.local_model_path = os.getenv("MODEL_PATH", "model_service/model/model.joblib")
-        self.mlflow_model_uri = os.getenv("MLFLOW_MODEL_URI", "models:/TelecomChurnClassifier@champion")
+        self.mlflow_model_uri = os.getenv(
+            "MLFLOW_MODEL_URI", "models:/TelecomChurnClassifier@champion"
+        )
 
     def load_model(self) -> bool:
         """Attempts to load model from MLflow registry first, then falls back to local artifact."""
@@ -86,7 +88,10 @@ class ModelManager:
         """Dynamically reloads model at runtime."""
         success = self.load_model()
         if success:
-            msg = f"Model successfully reloaded. Source: {self.model_source}, Version: {self.model_version}"
+            msg = (
+                f"Model successfully reloaded. "
+                f"Source: {self.model_source}, Version: {self.model_version}"
+            )
             logger.info(msg)
             return True, msg
         else:
@@ -132,7 +137,7 @@ class ModelManager:
         for i, row in enumerate(feature_dicts):
             p_val = float(probs[i])
             pred_label = "Yes" if (raw_preds[i] == 1 or p_val >= 0.5) else "No"
-            
+
             if p_val >= 0.65:
                 risk = "High"
             elif p_val >= 0.35:

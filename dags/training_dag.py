@@ -3,8 +3,10 @@ Airflow Training and Retraining DAG (Defense 2)
 Tasks:
   1. load_data: Checks if enough new data accumulated in good_data. If not, skips DAG run.
   2. train_model: Trains candidate model, logs parameters, metrics, and artifact to MLflow.
-  3. save_training_stats: Extracts feature baseline distributions and persists to training_stats table in PostgreSQL.
-  4. evaluate_candidate: Benchmarks candidate vs champion model on test set + inference latency threshold.
+  3. save_training_stats: Extracts feature baseline distributions and persists
+     to training_stats table in PostgreSQL.
+  4. evaluate_candidate: Benchmarks candidate vs champion model on test set
+     + inference latency threshold.
   5. promote_to_champion: Sets '@champion' alias in MLflow Model Registry.
   6. notify_api_reload (parallel): Calls FastAPI /reload-model endpoint.
   7. archive_data (parallel): Moves processed training files from good_data to archived_data.
@@ -74,7 +76,10 @@ with DAG(
             raise AirflowSkipException("No training data available.")
 
         combined_df = pd.concat(dfs, ignore_index=True)
-        logger.info(f"Loaded {len(combined_df)} total records for retraining ({len(good_files)} new files).")
+        logger.info(
+            f"Loaded {len(combined_df)} total records for retraining "
+            f"({len(good_files)} new files)."
+        )
 
         temp_train_path = os.path.join(PROJECT_ROOT, "data", ".current_training_data.csv")
         combined_df.to_csv(temp_train_path, index=False)
@@ -94,7 +99,7 @@ with DAG(
 
         train_path = load_info["training_data_path"]
         model_out = os.path.join(PROJECT_ROOT, "model_service", "model", "candidate_model.joblib")
-        
+
         result = train_fn(
             data_path=train_path,
             output_model_path=model_out,
@@ -157,7 +162,7 @@ with DAG(
 
         # Latency constraint
         latency_ok = cand_latency < 50.0  # Threshold: 50 ms
-        
+
         # Benchmark against champion baseline (defaults to 0.75 if first run)
         champion_acc_threshold = 0.75
         perf_ok = cand_accuracy >= champion_acc_threshold
@@ -174,7 +179,11 @@ with DAG(
             if webhook_url:
                 import requests
                 alert_body = {
-                    "text": f"⚠️ ML Candidate Model {train_info['model_version']} FAILED promotion criteria. Accuracy: {cand_accuracy:.4f}, Latency: {cand_latency:.2f}ms"
+                    "text": (
+                        f"⚠️ ML Candidate Model {train_info['model_version']} "
+                        f"FAILED promotion criteria. "
+                        f"Accuracy: {cand_accuracy:.4f}, Latency: {cand_latency:.2f}ms"
+                    )
                 }
                 try:
                     requests.post(webhook_url, json=alert_body, timeout=5)
@@ -189,7 +198,8 @@ with DAG(
     @task
     def save_training_stats(eval_info: dict):
         """
-        Saves promoted training statistics and baseline distributions to PostgreSQL for Grafana Drift monitoring.
+        Saves promoted training statistics and baseline distributions
+        to PostgreSQL for Grafana Drift monitoring.
         """
         train_info = eval_info["train_info"]
         is_champion = eval_info["promotion_passed"]
@@ -201,7 +211,9 @@ with DAG(
             cursor = conn.cursor()
         except Exception:
             import psycopg2
-            db_url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/dsp_app")
+            db_url = os.getenv(
+                "DATABASE_URL", "postgresql://postgres:postgres@postgres:5432/dsp_app"
+            )
             conn = psycopg2.connect(db_url)
             cursor = conn.cursor()
 
@@ -251,7 +263,10 @@ with DAG(
 
         # Copy candidate to active production model
         shutil.copyfile(cand_path, prod_model_path)
-        logger.info(f"Promoted {train_info['model_version']} to active production model at {prod_model_path}")
+        logger.info(
+            f"Promoted {train_info['model_version']} to active production "
+            f"model at {prod_model_path}"
+        )
 
         # Update alias in MLflow registry if available
         mlflow_uri = os.getenv("MLFLOW_TRACKING_URI")
@@ -263,8 +278,12 @@ with DAG(
                 versions = client.search_model_versions("name='TelecomChurnClassifier'")
                 if versions:
                     latest_ver = versions[0].version
-                    client.set_registered_model_alias("TelecomChurnClassifier", "champion", latest_ver)
-                    logger.info(f"Set @champion alias on TelecomChurnClassifier version {latest_ver}")
+                    client.set_registered_model_alias(
+                        "TelecomChurnClassifier", "champion", latest_ver
+                    )
+                    logger.info(
+                        f"Set @champion alias on TelecomChurnClassifier version {latest_ver}"
+                    )
             except Exception as e:
                 logger.warning(f"Failed to set MLflow alias: {e}")
 
@@ -305,10 +324,10 @@ with DAG(
     data_info = load_data()
     trained_info = train_model(data_info)
     eval_res = evaluate_candidate(trained_info)
-    
+
     # Save training stats runs after evaluate
     save_training_stats(eval_res)
-    
+
     # Promotion & parallel downstream tasks
     promo_res = promote_to_champion(eval_res)
     notify_api_reload(promo_res)

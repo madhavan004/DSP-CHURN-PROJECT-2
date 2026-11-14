@@ -3,11 +3,13 @@ Pydantic Schemas for Request and Response Validation
 """
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 
 class CustomerFeatures(BaseModel):
-    customerID: Optional[str] = Field(default="7590-VHVEG", description="Unique Customer Identifier")
+    customerID: Optional[str] = Field(
+        default="7590-VHVEG", description="Unique Customer Identifier"
+    )
     gender: str = Field(default="Female", description="Gender (Female / Male)")
     SeniorCitizen: int = Field(default=0, ge=0, le=1, description="Senior Citizen (0 or 1)")
     Partner: str = Field(default="Yes", description="Partner (Yes / No)")
@@ -15,7 +17,9 @@ class CustomerFeatures(BaseModel):
     tenure: float = Field(default=1.0, ge=0.0, description="Months with telecom provider")
     PhoneService: str = Field(default="No", description="Phone Service (Yes / No)")
     MultipleLines: str = Field(default="No phone service", description="Multiple Lines")
-    InternetService: str = Field(default="DSL", description="Internet Service (DSL, Fiber optic, No)")
+    InternetService: str = Field(
+        default="DSL", description="Internet Service (DSL, Fiber optic, No)"
+    )
     OnlineSecurity: str = Field(default="No", description="Online Security")
     OnlineBackup: str = Field(default="Yes", description="Online Backup")
     DeviceProtection: str = Field(default="No", description="Device Protection")
@@ -57,8 +61,12 @@ class CustomerFeatures(BaseModel):
 
 
 class PredictRequest(BaseModel):
-    features: List[CustomerFeatures] = Field(..., min_length=1, description="List of feature records to score")
-    source: Literal["webapp", "scheduled"] = Field(default="webapp", description="Origin source of prediction request")
+    features: List[CustomerFeatures] = Field(
+        ..., min_length=1, description="List of feature records to score"
+    )
+    source: Literal["webapp", "scheduled"] = Field(
+        default="webapp", description="Origin source of prediction request"
+    )
 
 
 class SinglePredictionResult(BaseModel):

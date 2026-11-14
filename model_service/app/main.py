@@ -53,7 +53,10 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Telecom Churn Prediction Service",
-    description="Production API for Telecom Customer Churn prediction, batch scoring, and past inference logs.",
+    description=(
+        "Production API for Telecom Customer Churn prediction, "
+        "batch scoring, and past inference logs."
+    ),
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -69,7 +72,7 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 def health_check(db: Session = Depends(get_db)):
-    """Health check endpoint confirming container readiness, database connectivity, and model state."""
+    """Health check: container readiness, database connectivity, and model state."""
     db_status = "ok"
     try:
         db.execute(text("SELECT 1"))
@@ -89,7 +92,10 @@ def health_check(db: Session = Depends(get_db)):
     )
 
 
-@app.post("/predict", response_model=BatchPredictResponse, status_code=status.HTTP_200_OK, tags=["Prediction"])
+@app.post(
+    "/predict", response_model=BatchPredictResponse,
+    status_code=status.HTTP_200_OK, tags=["Prediction"]
+)
 def predict(request: PredictRequest, db: Session = Depends(get_db)):
     """
     Make predictions for a single sample or batch of samples.
@@ -101,7 +107,7 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
         if not loaded:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Model artifact is not loaded. Please train or provide a valid model artifact.",
+                detail="Model artifact is not loaded. Train or provide a valid model artifact.",
             )
 
     feature_dicts = [f.model_dump() for f in request.features]
@@ -165,9 +171,15 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
 
 @app.get("/past-predictions", response_model=PastPredictionsResponse, tags=["Predictions History"])
 def get_past_predictions(
-    start_date: Optional[datetime] = Query(None, description="Filter records created on or after this UTC timestamp"),
-    end_date: Optional[datetime] = Query(None, description="Filter records created on or before this UTC timestamp"),
-    source: Optional[str] = Query("all", description="Source filter: 'webapp', 'scheduled', or 'all'"),
+    start_date: Optional[datetime] = Query(
+        None, description="Filter records created on or after this UTC timestamp"
+    ),
+    end_date: Optional[datetime] = Query(
+        None, description="Filter records created on or before this UTC timestamp"
+    ),
+    source: Optional[str] = Query(
+        "all", description="Source filter: 'webapp', 'scheduled', or 'all'"
+    ),
     limit: int = Query(100, ge=1, le=1000, description="Max number of records to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
     db: Session = Depends(get_db),

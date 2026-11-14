@@ -14,7 +14,6 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     JSON,
-    Text,
 )
 from .database import Base
 
@@ -24,11 +23,11 @@ class PredictionRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     customer_id = Column(String(50), nullable=True, index=True)
-    source = Column(String(20), nullable=False, default="webapp", index=True)  # 'webapp' or 'scheduled'
+    source = Column(String(20), nullable=False, default="webapp", index=True)  # webapp/scheduled
     prediction = Column(String(10), nullable=False)  # 'Yes' or 'No'
     churn_probability = Column(Float, nullable=False)
     model_version = Column(String(50), nullable=False, default="v1.0.0", index=True)
-    
+
     # Core feature columns for quick SQL indexing/filtering in Grafana
     tenure = Column(Float, nullable=True)
     monthly_charges = Column(Float, nullable=True)
@@ -36,7 +35,7 @@ class PredictionRecord(Base):
     contract = Column(String(50), nullable=True)
     internet_service = Column(String(50), nullable=True)
     payment_method = Column(String(100), nullable=True)
-    
+
     # Full feature payload stored as JSON for fidelity
     features_payload = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
@@ -52,7 +51,7 @@ class IngestionStatRecord(Base):
     valid_rows = Column(Integer, nullable=False)
     invalid_rows = Column(Integer, nullable=False)
     error_rate = Column(Float, nullable=False)  # 0.0 to 1.0
-    
+
     # Categorized error counts
     completeness_errors = Column(Integer, default=0)
     validity_errors = Column(Integer, default=0)
@@ -63,7 +62,7 @@ class IngestionStatRecord(Base):
     format_errors = Column(Integer, default=0)
     cross_field_errors = Column(Integer, default=0)
     outlier_errors = Column(Integer, default=0)
-    
+
     criticality = Column(String(20), nullable=False, index=True)  # 'Low', 'Medium', 'High'
     report_url = Column(String(500), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
@@ -76,13 +75,13 @@ class TrainingStatRecord(Base):
     model_version = Column(String(50), nullable=False, index=True)
     model_name = Column(String(100), nullable=False, default="TelecomChurnClassifier")
     run_id = Column(String(100), nullable=True)
-    
+
     # Performance metrics
     accuracy = Column(Float, nullable=True)
     f1_score = Column(Float, nullable=True)
     roc_auc = Column(Float, nullable=True)
     inference_time_ms = Column(Float, nullable=True)
-    
+
     # Full distribution statistics stored as JSON for baseline drift comparisons
     feature_stats = Column(JSON, nullable=False)
     metrics_payload = Column(JSON, nullable=True)

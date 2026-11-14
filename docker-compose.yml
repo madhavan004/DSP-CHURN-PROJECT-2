@@ -1,189 +1,236 @@
-# Defense 1 stack: PostgreSQL, FastAPI model service, Streamlit webapp,
-# and Apache Airflow 3.x (LocalExecutor: api-server + scheduler +
-# dag-processor + triggerer + a one-shot init job).
-#
-# Run with:  docker compose up --build
-#
-# NOTE: "docker compose" (space), not the deprecated "docker-compose".
-
-x-airflow-common: &airflow-common
-  build:
-    context: .
-    dockerfile: Dockerfile.airflow
-  environment: &airflow-common-env
-    AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${AIRFLOW_DB:-airflow_db}
-    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY:-}
-    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
-    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
-    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-please_change_this_jwt_secret}
-    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
-    # Airflow Connection for our APPLICATION database (used by PostgresHook
-    # in the ingestion DAG). Env-var-defined connections follow the
-    # AIRFLOW_CONN_<CONN_ID> convention (conn_id="dsp_postgres").
-    AIRFLOW_CONN_DSP_POSTGRES: postgres://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${POSTGRES_DB:-dsp_db}
-    GE_PROJECT_DIR: /opt/airflow/great_expectations
-    MODEL_API_URL: http://api:8000
-  volumes:
-    - ./dags:/opt/airflow/dags
-    - ./scripts:/opt/airflow/scripts
-    - ./data:/opt/airflow/data
-    - ./great_expectations:/opt/airflow/great_expectations
-    - airflow-logs:/opt/airflow/logs
-  user: "${AIRFLOW_UID:-50000}:0"
-  depends_on:
-    db:
-      condition: service_healthy
-
 services:
-  db:
-    image: postgres:16
+  # =================================================================
+  # 1. PostgreSQL Database (Shared for App & Airflow)
+  # =================================================================
+  postgres:
+    image: postgres:15-alpine
     container_name: dsp_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-dsp_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dsp_password}
-      POSTGRES_DB: ${POSTGRES_DB:-dsp_db}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-dsp_app}
+    ports:
+      - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./postgres_init:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_postgres.sql:/docker-entrypoint-initdb.d/init_postgres.sql:ro
+    networks:
+      - dsp_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dsp_user} -d ${POSTGRES_DB:-dsp_db}"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 3s
-      retries: 10
-    restart: unless-stopped
+      retries: 5
 
+  # =================================================================
+  # 2. FastAPI Model Service API
+  # =================================================================
   api:
-    build: ./model_service
-    container_name: dsp_api
+    build:
+      context: ./model_service
+      dockerfile: Dockerfile
+    container_name: dsp_model_api
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-dsp_user}:${POSTGRES_PASSWORD:-dsp_password}@db:5432/${POSTGRES_DB:-dsp_db}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dsp_app
+      MODEL_PATH: /app/model/model.joblib
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_MODEL_URI: models:/TelecomChurnClassifier@champion
     ports:
       - "8000:8000"
+    volumes:
+      - ./model_service/model:/app/model
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dsp_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 3s
-      retries: 5
-      start_period: 10s
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
+      retries: 3
+      start_period: 5s
 
+  # =================================================================
+  # 3. Streamlit Multi-Page WebApp
+  # =================================================================
   webapp:
-    build: ./webapp
-    container_name: dsp_webapp
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    container_name: dsp_streamlit_webapp
+    restart: unless-stopped
     environment:
       API_URL: http://api:8000
     ports:
       - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - dsp_network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
       interval: 10s
       timeout: 3s
-      retries: 5
-      start_period: 10s
-    depends_on:
-      api:
-        condition: service_healthy
+      retries: 3
+      start_period: 5s
+
+  # =================================================================
+  # 4. MLflow Tracking Server & Model Registry
+  # =================================================================
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.15.1
+    container_name: dsp_mlflow
     restart: unless-stopped
-
-  airflow-init:
-    <<: *airflow-common
-    container_name: dsp_airflow_init
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db migrate
-        airflow users create \
-          --username "${AIRFLOW_ADMIN_USER:-admin}" \
-          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com || true
-        if [ -n "${TEAMS_WEBHOOK_DATA_QUALITY:-}" ]; then
-          airflow variables set TEAMS_WEBHOOK_DATA_QUALITY "${TEAMS_WEBHOOK_DATA_QUALITY}"
-        fi
-        if [ -n "${TEAMS_WEBHOOK_ML_ALERTS:-}" ]; then
-          airflow variables set TEAMS_WEBHOOK_ML_ALERTS "${TEAMS_WEBHOOK_ML_ALERTS}"
-        fi
-    restart: on-failure
-
-  airflow-apiserver:
-    <<: *airflow-common
-    container_name: dsp_airflow_apiserver
-    command: api-server
+    environment:
+      BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dsp_app
+      ARTIFACT_ROOT: /mlflow/artifacts
+    command: >
+      mlflow server
+      --backend-store-uri postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dsp_app
+      --default-artifact-root /mlflow/artifacts
+      --host 0.0.0.0
+      --port 5000
     ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      - "5000:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
+    networks:
+      - dsp_network
+
+  # =================================================================
+  # 5. Apache Airflow 3.x (Init, Webserver, Scheduler)
+  # =================================================================
+  airflow-init:
+    image: apache/airflow:2.10.0-python3.12
+    container_name: dsp_airflow_init
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/airflow_db
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      _AIRFLOW_DB_MIGRATE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_USER:-admin}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_PASSWORD:-admin}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dsp_network
+    command: version
+
+  airflow-webserver:
+    image: apache/airflow:2.10.0-python3.12
+    container_name: dsp_airflow_webserver
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/airflow_db
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PROJECT_ROOT: /opt/airflow/project
+      API_URL: http://api:8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dsp_app
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    ports:
+      - "8085:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/project
+      - ./data_docs_reports:/opt/airflow/project/data_docs_reports
+    depends_on:
       airflow-init:
         condition: service_completed_successfully
-    restart: unless-stopped
+      postgres:
+        condition: service_healthy
+    networks:
+      - dsp_network
+    command: webserver
 
   airflow-scheduler:
-    <<: *airflow-common
+    image: apache/airflow:2.10.0-python3.12
     container_name: dsp_airflow_scheduler
+    restart: unless-stopped
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/airflow_db
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      PROJECT_ROOT: /opt/airflow/project
+      API_URL: http://api:8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/dsp_app
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - .:/opt/airflow/project
+      - ./data_docs_reports:/opt/airflow/project/data_docs_reports
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    networks:
+      - dsp_network
     command: scheduler
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      db:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
-    restart: unless-stopped
 
-  airflow-dag-processor:
-    <<: *airflow-common
-    container_name: dsp_airflow_dag_processor
-    command: dag-processor
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      db:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
+  # =================================================================
+  # 6. Nginx (Serving Great Expectations Data Docs HTML Reports)
+  # =================================================================
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: dsp_nginx_datadocs
     restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./data_docs_reports:/usr/share/nginx/html/reports:ro
+    networks:
+      - dsp_network
 
-  airflow-triggerer:
-    <<: *airflow-common
-    container_name: dsp_airflow_triggerer
-    command: triggerer
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    depends_on:
-      db:
-        condition: service_healthy
-      airflow-init:
-        condition: service_completed_successfully
+  # =================================================================
+  # 7. Grafana Monitoring Dashboards & Alerts
+  # =================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: dsp_grafana
     restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ALERTING_ENABLED: "true"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      TEAMS_DATA_QUALITY_WEBHOOK_URL: ${TEAMS_DATA_QUALITY_WEBHOOK_URL:-}
+      TEAMS_ML_ALERTS_WEBHOOK_URL: ${TEAMS_ML_ALERTS_WEBHOOK_URL:-}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dsp_network
+
+# =================================================================
+# Shared Networks & Named Volumes
+# =================================================================
+networks:
+  dsp_network:
+    driver: bridge
 
 volumes:
-  postgres-data:
-  airflow-logs:
+  postgres_data:
+    driver: local
+  mlflow_artifacts:
+    driver: local
+  grafana_data:
+    driver: local

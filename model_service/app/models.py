@@ -1,76 +1,90 @@
+"""
+SQLAlchemy ORM Database Models
+Supports:
+1. Predictions (used by API and UI)
+2. Ingestion Stats (used by Airflow Ingestion DAG & Grafana Data Quality Dashboard)
+3. Training Stats (used by Airflow Training DAG & Grafana Data Drift Dashboard)
+"""
 from datetime import datetime, timezone
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Float,
+    Boolean,
+    DateTime,
+    JSON,
+    Text,
+)
+from .database import Base
 
-from sqlalchemy import JSON, Column, DateTime, Float, Integer, String
-from sqlalchemy.sql import func
 
-from app.database import Base
-
-
-def utcnow():
-    return datetime.now(timezone.utc)
-
-
-class Prediction(Base):
-    """
-    Stores every prediction made by the model service, whether triggered
-    on-demand from the webapp or by the scheduled prediction Airflow DAG.
-
-    `features` keeps the full feature payload used for the prediction so
-    the UI can display it, and so the Grafana drift dashboard can compare
-    served feature distributions against training statistics.
-    """
-
+class PredictionRecord(Base):
     __tablename__ = "predictions"
 
-    id = Column(Integer, primary_key=True, index=True)
-    customer_id = Column(String, index=True, nullable=True)
-
-    # Raw feature payload used to make this prediction (JSON blob).
-    features = Column(JSON, nullable=False)
-
-    prediction = Column(String, nullable=False)  # "Yes" / "No"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    customer_id = Column(String(50), nullable=True, index=True)
+    source = Column(String(20), nullable=False, default="webapp", index=True)  # 'webapp' or 'scheduled'
+    prediction = Column(String(10), nullable=False)  # 'Yes' or 'No'
     churn_probability = Column(Float, nullable=False)
+    model_version = Column(String(50), nullable=False, default="v1.0.0", index=True)
+    
+    # Core feature columns for quick SQL indexing/filtering in Grafana
+    tenure = Column(Float, nullable=True)
+    monthly_charges = Column(Float, nullable=True)
+    total_charges = Column(Float, nullable=True)
+    contract = Column(String(50), nullable=True)
+    internet_service = Column(String(50), nullable=True)
+    payment_method = Column(String(100), nullable=True)
+    
+    # Full feature payload stored as JSON for fidelity
+    features_payload = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    model_version = Column(String, nullable=False, index=True)
 
-    # Where the prediction request came from: "webapp" or "scheduled"
-    source = Column(String, nullable=False, index=True)
-
-    created_at = Column(
-        DateTime(timezone=True), server_default=func.now(), index=True
-    )
-
-
-class IngestionStat(Base):
-    """
-    Summary statistics for a single ingestion DAG run (one raw_data file).
-    Stores aggregated counts per error category rather than raw rows, so
-    the Grafana data-quality dashboard can query trends over time.
-    """
-
+class IngestionStatRecord(Base):
     __tablename__ = "ingestion_stats"
 
-    id = Column(Integer, primary_key=True, index=True)
-
-    file_name = Column(String, nullable=False, index=True)
-    total_rows = Column(Integer, nullable=False)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    batch_id = Column(String(100), nullable=False, index=True)
+    file_name = Column(String(255), nullable=False)
+    total_rows = Column(Integer, nullable=False, default=10)
     valid_rows = Column(Integer, nullable=False)
     invalid_rows = Column(Integer, nullable=False)
+    error_rate = Column(Float, nullable=False)  # 0.0 to 1.0
+    
+    # Categorized error counts
+    completeness_errors = Column(Integer, default=0)
+    validity_errors = Column(Integer, default=0)
+    consistency_errors = Column(Integer, default=0)
+    schema_errors = Column(Integer, default=0)
+    type_errors = Column(Integer, default=0)
+    duplicate_errors = Column(Integer, default=0)
+    format_errors = Column(Integer, default=0)
+    cross_field_errors = Column(Integer, default=0)
+    outlier_errors = Column(Integer, default=0)
+    
+    criticality = Column(String(20), nullable=False, index=True)  # 'Low', 'Medium', 'High'
+    report_url = Column(String(500), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
-    criticality = Column(String, nullable=False, index=True)  # none/low/medium/high
 
-    # Per data-quality-category error counts (row-level counts, a row can
-    # contribute to more than one category).
-    completeness_errors = Column(Integer, nullable=False, default=0)
-    validity_errors = Column(Integer, nullable=False, default=0)
-    consistency_errors = Column(Integer, nullable=False, default=0)
-    schema_errors = Column(Integer, nullable=False, default=0)
-    type_errors = Column(Integer, nullable=False, default=0)
-    duplicate_errors = Column(Integer, nullable=False, default=0)
-    cross_field_errors = Column(Integer, nullable=False, default=0)
+class TrainingStatRecord(Base):
+    __tablename__ = "training_stats"
 
-    report_file_name = Column(String, nullable=True)
-
-    created_at = Column(
-        DateTime(timezone=True), server_default=func.now(), index=True
-    )
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    model_version = Column(String(50), nullable=False, index=True)
+    model_name = Column(String(100), nullable=False, default="TelecomChurnClassifier")
+    run_id = Column(String(100), nullable=True)
+    
+    # Performance metrics
+    accuracy = Column(Float, nullable=True)
+    f1_score = Column(Float, nullable=True)
+    roc_auc = Column(Float, nullable=True)
+    inference_time_ms = Column(Float, nullable=True)
+    
+    # Full distribution statistics stored as JSON for baseline drift comparisons
+    feature_stats = Column(JSON, nullable=False)
+    metrics_payload = Column(JSON, nullable=True)
+    is_champion = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)

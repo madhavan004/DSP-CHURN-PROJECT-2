@@ -1,0 +1,131 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "id": 1,
+      "title": "📈 Batch Ingestion Error Rate (%) Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "pointSize": 6,
+            "showPoints": "always"
+          },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.1 },
+              { "color": "red", "value": 0.5 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at AS \"time\", error_rate FROM ingestion_stats WHERE $__timeFilter(created_at) ORDER BY created_at ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "🔍 Detected Errors Breakdown by Category Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": { "mode": "normal", "group": "A" }
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at AS \"time\", completeness_errors AS \"Completeness\", validity_errors AS \"Validity\", consistency_errors AS \"Consistency\", schema_errors AS \"Schema\", type_errors AS \"Type\", duplicate_errors AS \"Duplicates\", format_errors AS \"Format\", cross_field_errors AS \"Cross-Field\", outlier_errors AS \"Outliers\" FROM ingestion_stats WHERE $__timeFilter(created_at) ORDER BY created_at ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "📦 Batch Row Volume (Valid vs Invalid Rows)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 20
+          }
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Valid Rows" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Invalid Rows" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at AS \"time\", valid_rows AS \"Valid Rows\", invalid_rows AS \"Invalid Rows\" FROM ingestion_stats WHERE $__timeFilter(created_at) ORDER BY created_at ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "🚨 Recent Ingestion Quality Audits & Great Expectations Reports",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "criticality" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "High": { "color": "red", "text": "HIGH 🚨" }, "Medium": { "color": "orange", "text": "MEDIUM ⚠️" }, "Low": { "color": "yellow", "text": "LOW ℹ️" }, "None": { "color": "green", "text": "NONE ✅" } } }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT created_at, file_name, total_rows, valid_rows, invalid_rows, round((error_rate * 100)::numeric, 1) as \"error_pct\", criticality, report_url FROM ingestion_stats WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 20;",
+          "format": "table"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["mlops", "data-quality", "great-expectations"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "timezone": "browser",
+  "title": "Data Quality Monitoring (Ingestion Pipeline)",
+  "uid": "data-quality-monitoring",
+  "version": 1
+}

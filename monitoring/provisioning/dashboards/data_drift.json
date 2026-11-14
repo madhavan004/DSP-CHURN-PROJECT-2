@@ -1,0 +1,135 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "id": 1,
+      "title": "📊 Numerical Feature Drift: MonthlyCharges Serving Mean vs Training Baseline",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "pointSize": 5,
+            "showPoints": "always"
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Baseline Training Mean ($64.76)" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [10, 10], "fill": "dash" } },
+              { "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Serving Hourly Mean" },
+            "properties": [
+              { "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', created_at) AS \"time\", AVG(monthly_charges) AS \"Serving Hourly Mean\", 64.76 AS \"Baseline Training Mean ($64.76)\" FROM predictions WHERE $__timeFilter(created_at) AND monthly_charges IS NOT NULL GROUP BY 1 ORDER BY 1 ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "📑 Categorical Feature Drift: Contract Type Serving Share (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": { "mode": "percent", "group": "A" }
+          },
+          "unit": "percentunit"
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', created_at) AS \"time\", COUNT(CASE WHEN contract = 'Month-to-month' THEN 1 END)::float / NULLIF(COUNT(*), 0) AS \"Month-to-month Share\", COUNT(CASE WHEN contract = 'One year' THEN 1 END)::float / NULLIF(COUNT(*), 0) AS \"One Year Share\", COUNT(CASE WHEN contract = 'Two year' THEN 1 END)::float / NULLIF(COUNT(*), 0) AS \"Two Year Share\" FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "🎯 Model Prediction Behavior: Churn Rate (%) Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 25
+          },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.35 },
+              { "color": "red", "value": 0.55 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', created_at) AS \"time\", (COUNT(CASE WHEN prediction = 'Yes' THEN 1 END)::float / NULLIF(COUNT(*), 0)) AS \"Predicted Churn Rate\" FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 ASC;",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "📈 Model Confidence: Mean Churn Probability Trend",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "postgres", "uid": "PostgreSQL-DSP" },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "showPoints": "auto"
+          },
+          "unit": "percentunit"
+        }
+      },
+      "targets": [
+        {
+          "rawSql": "SELECT date_trunc('minute', created_at) AS \"time\", AVG(churn_probability) AS \"Avg Churn Probability\", MAX(churn_probability) AS \"Max Churn Probability\", MIN(churn_probability) AS \"Min Churn Probability\" FROM predictions WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1 ASC;",
+          "format": "time_series"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["mlops", "drift-monitoring", "model-drift"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"] },
+  "timezone": "browser",
+  "title": "Data Drift & Model Serving Monitor",
+  "uid": "data-drift-monitoring",
+  "version": 1
+}

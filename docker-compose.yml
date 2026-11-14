@@ -143,6 +143,7 @@ services:
       - ./dags:/opt/airflow/dags
       - .:/opt/airflow/project
       - ./data_docs_reports:/opt/airflow/project/data_docs_reports
+      - ./great_expectations:/opt/airflow/great_expectations
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -168,6 +169,7 @@ services:
       - ./dags:/opt/airflow/dags
       - .:/opt/airflow/project
       - ./data_docs_reports:/opt/airflow/project/data_docs_reports
+      - ./great_expectations:/opt/airflow/great_expectations
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -190,6 +192,7 @@ services:
       - "8080:80"
     volumes:
       - ./data_docs_reports:/usr/share/nginx/html/reports:ro
+      - ./great_expectations:/usr/share/nginx/html/great_expectations:ro
     networks:
       - dsp_network
 

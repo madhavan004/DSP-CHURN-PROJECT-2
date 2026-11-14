@@ -15,7 +15,11 @@ venv/
 logs/
 airflow.cfg
 airflow-webserver.pid
-great_expectations/gx/
+great_expectations/gx/uncommitted/
+great_expectations/gx/plugins/
+*.pdf
+anbu_guide.html
+generate_anbu_pdf.py
 
 # Data (generated at runtime, not part of the repo)
 data/raw_data/*

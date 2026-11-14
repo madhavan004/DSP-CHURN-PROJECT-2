@@ -2,16 +2,25 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# curl is needed for the Docker healthcheck (not included in slim images)
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+# Install curl for health checks and build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gcc \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
-COPY model_artifact/ ./model_artifact/
+COPY model/ ./model/
+
+ENV PYTHONPATH=/app
+ENV PORT=8000
 
 EXPOSE 8000
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=5s \
+    CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
